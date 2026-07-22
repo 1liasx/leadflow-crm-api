@@ -1,39 +1,50 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, String, func
+from sqlalchemy import DateTime, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
 if TYPE_CHECKING:
-    from app.models.contact import Contact
+    from app.models.company import Company
 
 
-class Company(Base):
-    __tablename__ = "companies"
+class Contact(Base):
+    __tablename__ = "contacts"
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
-    name: Mapped[str] = mapped_column(
-        String(150),
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey("companies.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=False,
+    )
+
+    first_name: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+    )
+
+    last_name: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+    )
+
+    email: Mapped[str] = mapped_column(
+        String(255),
         unique=True,
         index=True,
         nullable=False,
     )
 
-    industry: Mapped[str | None] = mapped_column(
-        String(100),
-        nullable=True,
-    )
-
-    website: Mapped[str | None] = mapped_column(
-        String(255),
-        nullable=True,
-    )
-
     phone: Mapped[str | None] = mapped_column(
         String(30),
+        nullable=True,
+    )
+
+    job_title: Mapped[str | None] = mapped_column(
+        String(100),
         nullable=True,
     )
 
@@ -48,6 +59,6 @@ class Company(Base):
         onupdate=func.now(),
     )
 
-    contacts: Mapped[list["Contact"]] = relationship(
-        back_populates="company",
+    company: Mapped["Company"] = relationship(
+        back_populates="contacts",
     )
