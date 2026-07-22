@@ -8,6 +8,7 @@ from app.database import Base
 
 if TYPE_CHECKING:
     from app.models.contact import Contact
+    from app.models.lead import Lead
 
 
 class Company(Base):
@@ -49,5 +50,8 @@ class Company(Base):
     )
 
     contacts: Mapped[list["Contact"]] = relationship(
+        back_populates="company",
+    )
+    leads: Mapped[list["Lead"]] = relationship(
         back_populates="company",
     )

@@ -5,6 +5,7 @@ from sqlalchemy import pool
 
 from alembic import context
 from app.config import settings
+from app.models.lead import Lead  # noqa: F401
 from app.database import Base
 from app.models.company import Company  # noqa: F401
 from app.models.contact import Contact  # noqa: F401
