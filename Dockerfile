@@ -8,10 +8,14 @@ WORKDIR /app
 COPY requirements.txt .
 
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
+    && pip install --no-cache-dir -r requirements.txt \
+    && addgroup --system app \
+    && adduser --system --ingroup app app
 
-COPY alembic.ini .
-COPY alembic ./alembic
-COPY app ./app
+COPY --chown=app:app alembic.ini .
+COPY --chown=app:app alembic ./alembic
+COPY --chown=app:app app ./app
+
+USER app
 
 CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]

@@ -1,117 +1,163 @@
-# LeadFlow CRM API
+LeadFlow AI CRM
 
-A production-oriented CRM backend built with FastAPI, PostgreSQL, SQLAlchemy, Alembic, Docker, and Pytest.
 
-LeadFlow provides a structured API for managing companies, contacts, and sales leads. It is designed to serve as a reliable backend for business automation workflows, including future n8n and AI integrations.
 
-## Project Overview
+LeadFlow is a production-oriented lead intake and AI qualification system built with FastAPI, PostgreSQL, n8n, OpenAI, Docker, Alembic, and Pytest.
 
-Many automation workflows rely on spreadsheets as their primary database. This becomes difficult to maintain when the volume of contacts and leads increases.
+It receives inbound leads through a production webhook, validates and normalizes the payload, reuses or creates the related company and contact, prevents duplicate lead processing with an external ID, qualifies new opportunities with AI, and persists the enriched result through a documented REST API.
 
-LeadFlow replaces that approach with:
+Why This Project
 
-- A relational PostgreSQL database
-- A documented REST API
-- Strong request validation
-- Controlled database migrations
-- Automated integration tests
-- Docker-based deployment
-- Business rules protecting relational data
+Lead intake often starts with forms, spreadsheets, and disconnected automation steps. That approach becomes fragile when the same request is submitted twice, business data must stay relational, or failures need to be investigated.
 
-## Core Features
+LeadFlow provides:
 
-### Companies
+A relational CRM backend instead of a spreadsheet database
 
-- Create a company
-- List companies with pagination
-- Retrieve a company by ID
-- Update selected fields
-- Delete a company
-- Prevent duplicate company names
-- Prevent deletion when linked records exist
+Idempotent lead processing with a unique external_id
 
-### Contacts
+Company and contact deduplication
 
-- Create contacts linked to companies
-- Validate email addresses
-- Prevent duplicate emails
-- Filter contacts by company
-- Update selected fields
-- Delete contacts
-- Verify that the related company exists
+AI-based lead scoring and qualification
 
-### Leads
+A production n8n webhook with structured responses
 
-- Create sales leads linked to companies
-- Optionally associate a contact
-- Track estimated value and currency
-- Manage lead status
-- Filter leads by company, contact, and status
-- Update and delete leads
-- Verify that a contact belongs to the selected company
+Centralized workflow error handling and safe API retries
 
-## Lead Lifecycle
+Versioned database migrations
 
-The following statuses are supported:
+Automated tests and Docker image validation in GitHub Actions
 
-```text
-new → qualified → won
-                ↘ lost
-```
+System Architecture
 
-PostgreSQL rejects unsupported status values and negative estimated values.
+flowchart TD
+    Form["Website / external system"] --> Webhook["n8n production webhook"]
+    Webhook --> Normalize["Normalize and validate"]
+    Normalize --> Resolve["Resolve company and contact"]
+    Resolve --> Deduplicate["Check external lead ID"]
+    Deduplicate -->|Existing| Existing["Return existing lead"]
+    Deduplicate -->|New| AI["AI qualification"]
+    AI --> API["FastAPI CRM API"]
+    API --> DB["PostgreSQL"]
 
-## Technology Stack
+Workflow failures are routed to a separate LF-99 Error Handler workflow, which records structured execution details for diagnosis.
 
-| Technology | Purpose |
-|---|---|
-| Python 3.13 | Application language |
-| FastAPI | REST API framework |
-| PostgreSQL 17 | Relational database |
-| SQLAlchemy 2 | ORM and database sessions |
-| Pydantic 2 | Request and response validation |
-| Alembic | Database migrations |
-| Psycopg 3 | PostgreSQL driver |
-| Docker | Application containerization |
-| Docker Compose | Multi-container orchestration |
-| Pytest | Automated testing |
-| Swagger UI | Interactive API documentation |
+Lead Intake Workflow
 
-## Architecture
+The versioned n8n workflow performs the following operations:
 
-```mermaid
-flowchart LR
-    Client["Client / n8n"] --> API["FastAPI"]
-    API --> Validation["Pydantic validation"]
-    Validation --> ORM["SQLAlchemy"]
-    ORM --> DB["PostgreSQL"]
-```
+Receive a JSON payload through POST /webhook/leadflow-intake.
 
-### Request Lifecycle
+Validate required fields and normalize email addresses, phone numbers, currency, and source.
 
-```text
-HTTP request
-    ↓
-FastAPI router
-    ↓
-Pydantic validation
-    ↓
-Business rules
-    ↓
-SQLAlchemy session
-    ↓
-PostgreSQL transaction
-    ↓
-JSON response
-```
+Find or create the company.
 
-## Data Model
+Find or create the contact.
 
-```mermaid
+Search for an existing lead by external_id.
+
+Return the existing lead without calling the AI model when the request was already processed.
+
+Qualify a new lead with an AI scoring rubric.
+
+Parse and validate the AI JSON response.
+
+Create the enriched lead in the CRM API.
+
+Return a consistent JSON response to the caller.
+
+Example response for a new lead:
+
+{
+  "success": true,
+  "created": true,
+  "message": "Lead created successfully",
+  "lead_id": 9,
+  "external_id": "FORM-PROD-001"
+}
+
+Example response for a duplicate request:
+
+{
+  "success": true,
+  "created": false,
+  "message": "Lead already processed",
+  "lead_id": 9,
+  "external_id": "FORM-PROD-001"
+}
+
+AI Qualification
+
+New opportunities receive:
+
+A score from 0 to 100
+
+A priority: low, medium, or high
+
+A CRM status derived from the score
+
+A concise French summary
+
+A concrete recommended action
+
+The parsed response is validated before persistence. The original description and the AI qualification are stored together so the decision remains auditable.
+
+Technology Stack
+
+Technology
+
+Purpose
+
+Python 3.13
+
+Application runtime
+
+FastAPI
+
+REST API and OpenAPI documentation
+
+PostgreSQL 17
+
+Relational persistence
+
+SQLAlchemy 2
+
+ORM and database sessions
+
+Pydantic 2
+
+Request and response validation
+
+Alembic
+
+Versioned database migrations
+
+n8n
+
+Workflow orchestration and production webhook
+
+OpenAI
+
+Lead qualification
+
+Docker Compose
+
+Local multi-container environment
+
+Pytest
+
+Integration tests
+
+GitHub Actions
+
+Migrations, tests, and Docker build validation
+
+Data Model
+
 erDiagram
     COMPANY ||--o{ CONTACT : has
     COMPANY ||--o{ LEAD : owns
-    CONTACT o|--o{ LEAD : associated_with
+    CONTACT o|--o{ LEAD : qualifies
 
     COMPANY {
         int id PK
@@ -119,8 +165,6 @@ erDiagram
         string industry
         string website
         string phone
-        datetime created_at
-        datetime updated_at
     }
 
     CONTACT {
@@ -131,348 +175,243 @@ erDiagram
         string email UK
         string phone
         string job_title
-        datetime created_at
-        datetime updated_at
     }
 
     LEAD {
         int id PK
         int company_id FK
         int contact_id FK
+        string external_id UK
         string title
         text description
         string status
-        string source
         decimal estimated_value
         string currency
-        datetime created_at
-        datetime updated_at
     }
-```
 
-## Relationship Rules
+Business Rules
 
-- A company can have multiple contacts.
-- A company can have multiple leads.
-- A contact belongs to one company.
-- A lead must belong to one company.
-- A lead may optionally reference one contact.
-- A company with contacts or leads cannot be deleted.
-- Deleting a contact preserves its leads and sets their `contact_id` to `NULL`.
+Company names and contact emails are unique.
 
-## API Endpoints
+Every contact belongs to an existing company.
 
-### Health
+Every lead belongs to a company.
 
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/health` | Check API availability |
+A referenced contact must belong to the selected company.
 
-### Companies
+external_id prevents the same external request from creating multiple leads.
 
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/companies` | Create a company |
-| GET | `/companies` | List companies |
-| GET | `/companies/{company_id}` | Retrieve a company |
-| PATCH | `/companies/{company_id}` | Update a company |
-| DELETE | `/companies/{company_id}` | Delete a company |
+Unsupported lead statuses and negative estimated values are rejected.
 
-### Contacts
+Companies with linked records cannot be deleted.
 
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/contacts` | Create a contact |
-| GET | `/contacts` | List and filter contacts |
-| GET | `/contacts/{contact_id}` | Retrieve a contact |
-| PATCH | `/contacts/{contact_id}` | Update a contact |
-| DELETE | `/contacts/{contact_id}` | Delete a contact |
+Deleting a contact preserves its leads and sets their contact_id to NULL.
 
-### Leads
+Supported lead statuses:
 
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/leads` | Create a lead |
-| GET | `/leads` | List and filter leads |
-| GET | `/leads/{lead_id}` | Retrieve a lead |
-| PATCH | `/leads/{lead_id}` | Update a lead |
-| DELETE | `/leads/{lead_id}` | Delete a lead |
+new → qualified → won
+                ↘ lost
 
-## Example: Create a Company
+API
 
-Request:
+The application exposes 15 CRUD endpoints plus a health endpoint.
 
-```http
-POST /companies
-Content-Type: application/json
-```
+Resource
 
-```json
-{
-  "name": "Atlas Digital",
-  "industry": "Technology",
-  "website": "https://atlas.example",
-  "phone": "+212600000000"
-}
-```
+Operations and filters
 
-Expected response:
+Health
 
-```json
-{
-  "name": "Atlas Digital",
-  "industry": "Technology",
-  "website": "https://atlas.example",
-  "phone": "+212600000000",
-  "id": 1,
-  "created_at": "2026-07-22T18:00:00Z",
-  "updated_at": "2026-07-22T18:00:00Z"
-}
-```
+GET /health
 
-## Example: Create a Lead
+Companies
 
-```json
-{
-  "company_id": 1,
-  "contact_id": 1,
-  "title": "Lead management automation",
-  "description": "Integration between n8n, FastAPI and PostgreSQL",
-  "status": "new",
-  "source": "LinkedIn",
-  "estimated_value": 8000,
-  "currency": "MAD"
-}
-```
+Create, list, retrieve, update, delete; exact case-insensitive name filter
 
-## Running the Project with Docker
+Contacts
 
-### Requirements
+Create, list, retrieve, update, delete; company_id and exact case-insensitive email filters
 
-Install:
+Leads
 
-- Git
-- Docker Desktop
-- Docker Compose
+Create, list, retrieve, update, delete; company_id, contact_id, status, and external_id filters
 
-### 1. Clone the repository
+Interactive documentation:
 
-```bash
+Swagger UI: http://localhost:8001/docs
+
+ReDoc: http://localhost:8001/redoc
+
+Run Locally
+
+Requirements
+
+Git
+
+Docker Desktop
+
+Docker Compose
+
+1. Clone the repository
+
 git clone https://github.com/1liasx/leadflow-crm-api.git
 cd leadflow-crm-api
-```
 
-### 2. Create the environment file
+2. Create the environment file
 
 Windows PowerShell:
 
-```powershell
 Copy-Item .env.example .env
-```
 
 Linux or macOS:
 
-```bash
 cp .env.example .env
-```
 
-Update the PostgreSQL password in `.env` before deployment.
+Replace the example PostgreSQL password and n8n encryption key before starting the stack. Never commit .env.
 
-### 3. Build and start the services
+Generate a suitable n8n encryption key:
 
-```bash
+openssl rand -hex 32
+
+3. Start the stack
+
 docker compose up --build -d
-```
 
-Docker Compose starts:
+Service
 
-| Service | Port |
-|---|---:|
-| FastAPI | `8001` |
-| Development PostgreSQL | `5432` |
-| Test PostgreSQL | `5433` |
+Local address
 
-### 4. Open the API documentation
+FastAPI
 
-Swagger UI:
+http://localhost:8001
 
-```text
-http://127.0.0.1:8001/docs
-```
+n8n
 
-ReDoc:
+http://localhost:5678
 
-```text
-http://127.0.0.1:8001/redoc
-```
+PostgreSQL
 
-Health endpoint:
+localhost:5432
 
-```text
-http://127.0.0.1:8001/health
-```
+Test PostgreSQL
 
-### 5. Stop the services
+localhost:5433
 
-```bash
-docker compose down
-```
+Check container status:
 
-The development database remains available through its Docker volume.
+docker compose ps
 
-## Database Migrations
+Check API health:
 
-Alembic manages database schema changes.
+curl http://localhost:8001/health
 
-Create a migration:
+Expected response:
 
-```bash
-alembic revision --autogenerate -m "migration description"
-```
+{"status":"healthy"}
 
-Apply all migrations locally:
+Import the n8n Workflows
 
-```bash
-alembic upgrade head
-```
+The sanitized exports are stored in n8n/workflows/:
 
-Apply migrations inside Docker:
+LF-01-lead-intake-ai-qualification.json
 
-```bash
-docker compose exec app alembic upgrade head
-```
+LF-99-error-handler.json
 
-The application container also applies pending migrations when it starts.
+After importing them:
 
-## Automated Tests
+Connect an OpenAI credential to the chat model node.
 
-The project includes 18 automated integration tests covering:
+Select LF-99 Error Handler in the main workflow's error workflow setting.
 
-- API health
-- Company CRUD
-- Contact CRUD
-- Lead CRUD
-- Duplicate detection
-- Pydantic validation
-- Filtering and pagination
-- Missing resources
-- Company/contact consistency
-- PostgreSQL relationship rules
-- `ON DELETE RESTRICT`
-- `ON DELETE SET NULL`
+Verify the internal API base URL is http://app:8000.
 
-Start the test database:
+Publish both workflows.
 
-```bash
+Production webhook:
+
+POST http://localhost:5678/webhook/leadflow-intake
+
+Test
+
+Start the isolated test database:
+
 docker compose up -d db_test
-```
 
-Run the tests:
+Run the test suite:
 
-```bash
-python -m pytest -v
-```
+python -m pytest -q
 
-The tests use `leadflow_test_db` on port `5433`. Development data on port `5432` is never modified by the test suite.
+The current suite contains 18 integration tests covering companies, contacts, leads, validation, relational rules, and health checks.
 
-## Project Structure
+Database Migrations
 
-```text
-leadflow-crm-api/
+Apply all migrations:
+
+python -m alembic upgrade head
+
+Show the current revision:
+
+python -m alembic current
+
+Create a new migration after a model change:
+
+python -m alembic revision --autogenerate -m "describe change"
+
+Continuous Integration
+
+Every push and pull request to main runs:
+
+A PostgreSQL 17 service
+
+Dependency installation on Python 3.13
+
+The complete Alembic migration chain
+
+The Pytest suite
+
+A clean Docker image build
+
+The pipeline is defined in .github/workflows/ci.yml.
+
+Security Notes
+
+Secrets are loaded from .env, which is excluded from Git.
+
+The n8n encryption key must be unique and kept outside the repository.
+
+Exported workflows do not contain credentials or local workflow identifiers.
+
+PostgreSQL ports are intended for local development and should not be publicly exposed in production.
+
+Production deployment should terminate TLS through a reverse proxy and restrict API, database, and n8n administration access.
+
+Project Structure
+
+.
+├── .github/workflows/ci.yml
 ├── alembic/
-│   ├── versions/
-│   └── env.py
 ├── app/
 │   ├── models/
-│   │   ├── company.py
-│   │   ├── contact.py
-│   │   └── lead.py
 │   ├── routers/
-│   │   ├── companies.py
-│   │   ├── contacts.py
-│   │   └── leads.py
 │   ├── schemas/
-│   │   ├── company.py
-│   │   ├── contact.py
-│   │   └── lead.py
 │   ├── config.py
 │   ├── database.py
 │   └── main.py
+├── n8n/workflows/
 ├── tests/
-│   ├── conftest.py
-│   ├── test_companies.py
-│   ├── test_contacts.py
-│   ├── test_health.py
-│   └── test_leads.py
-├── .dockerignore
 ├── .env.example
-├── .gitignore
-├── alembic.ini
-├── docker-compose.yml
 ├── Dockerfile
-├── pytest.ini
-├── requirements.txt
-└── README.md
-```
+├── docker-compose.yml
+└── requirements.txt
 
-## Environment Variables
+Stop the Stack
 
-```env
-POSTGRES_USER=leadflow_user
-POSTGRES_PASSWORD=change_me
-POSTGRES_DB=leadflow_db
-POSTGRES_HOST=localhost
-POSTGRES_PORT=5432
-```
+Keep persisted data:
 
-Never commit the real `.env` file.
+docker compose down
 
-## HTTP Status Codes
+Remove local database and n8n volumes:
 
-| Status | Meaning |
-|---:|---|
-| 200 | Successful request |
-| 201 | Resource created |
-| 204 | Resource deleted |
-| 404 | Resource not found |
-| 409 | Duplicate or relational conflict |
-| 422 | Invalid request data |
+docker compose down -v
 
-## Roadmap
-
-- [x] FastAPI application
-- [x] PostgreSQL integration
-- [x] Company CRUD
-- [x] Contact CRUD
-- [x] Lead CRUD
-- [x] SQLAlchemy relationships
-- [x] Alembic migrations
-- [x] Docker and Docker Compose
-- [x] Automated integration tests
-- [ ] Search and dashboard statistics
-- [ ] n8n webhook integration
-- [ ] AI lead qualification
-- [ ] Authentication and authorization
-- [ ] Redis caching
-- [ ] Continuous integration with GitHub Actions
-
-## Use Cases
-
-LeadFlow can serve as a backend for:
-
-- Website lead capture
-- n8n automation workflows
-- AI lead qualification
-- Sales pipeline tracking
-- CRM synchronization
-- Automated follow-up systems
-- Business reporting dashboards
-
-## Author
-
-**Iliasse Zahouani**
-
-Engineering student at ENSA Safi, focused on AI automation and backend engineering.
-
-- GitHub: [1liasx](https://github.com/1liasx)
-- LinkedIn: [Iliasse Zahouani](https://www.linkedin.com/in/iliasse-zahouani-251322388/)
+The second command permanently deletes local container data.
