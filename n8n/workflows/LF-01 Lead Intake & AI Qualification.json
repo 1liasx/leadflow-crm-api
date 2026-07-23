@@ -1,0 +1,737 @@
+{
+  "name": "LF-01 Lead Intake & AI Qualification",
+  "nodes": [
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://app:8000/contacts",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"company_id\": {{ $('Resolve Company').item.json.company_id }},\n  \"first_name\": \"{{ $('Normalize & Validate').item.json.contact.first_name }}\",\n  \"last_name\": \"{{ $('Normalize & Validate').item.json.contact.last_name }}\",\n  \"email\": \"{{ $('Normalize & Validate').item.json.contact.email }}\",\n  \"phone\": \"{{ $('Normalize & Validate').item.json.contact.phone }}\",\n  \"job_title\": \"{{ $('Normalize & Validate').item.json.contact.job_title }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1680,
+        112
+      ],
+      "id": "4e4093c7-14d0-41ed-b281-249957304beb",
+      "name": "Create Contact"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://app:8000/leads",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        3296,
+        32
+      ],
+      "id": "0df3a80c-0e64-4e43-bb91-1011e7d4e9b4",
+      "name": "Create Lead"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "leadflow-intake",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "24fa20c2-831e-4489-9f65-73ffcabd22b3",
+      "name": "Webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body ?? {};\n\nfunction clean(value) {\n  return value === undefined || value === null\n    ? \"\"\n    : String(value).trim();\n}\n\nfunction normalizePhone(value) {\n  return clean(value).replace(/[\\s()-]/g, \"\");\n}\n\nconst requiredFields = [\n  \"external_id\",\n  \"company_name\",\n  \"first_name\",\n  \"last_name\",\n  \"email\",\n  \"title\",\n  \"description\",\n];\n\nconst missingFields = requiredFields.filter(\n  (field) => clean(body[field]) === \"\"\n);\n\nif (missingFields.length > 0) {\n  throw new Error(\n    `Missing required fields: ${missingFields.join(\", \")}`\n  );\n}\n\nconst externalId = clean(body.external_id);\n\nif (!/^[A-Za-z0-9._:-]{3,100}$/.test(externalId)) {\n  throw new Error(\n    \"external_id must contain 3-100 letters, numbers, dots, underscores, colons or hyphens\"\n  );\n}\n\nconst email = clean(body.email).toLowerCase();\n\nif (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {\n  throw new Error(\"Invalid email address\");\n}\n\nconst estimatedValue = Number(body.estimated_value ?? 0);\n\nif (!Number.isFinite(estimatedValue) || estimatedValue < 0) {\n  throw new Error(\n    \"estimated_value must be a non-negative number\"\n  );\n}\n\nreturn [\n  {\n    json: {\n      company: {\n        name: clean(body.company_name),\n        industry: clean(body.industry),\n        website: clean(body.website),\n        phone: normalizePhone(body.company_phone),\n      },\n      contact: {\n        first_name: clean(body.first_name),\n        last_name: clean(body.last_name),\n        email,\n        phone: normalizePhone(body.phone),\n        job_title: clean(body.job_title),\n      },\n      lead: {\n        external_id: externalId,\n        title: clean(body.title),\n        description: clean(body.description),\n        status: \"new\",\n        source: clean(body.source || \"website_form\")\n          .toLowerCase()\n          .replace(/\\s+/g, \"_\"),\n        estimated_value: estimatedValue,\n        currency: clean(body.currency || \"MAD\").toUpperCase(),\n      },\n    },\n  },\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "89d02497-f36f-4325-ba65-9ec6e6b4ee96",
+      "name": "Normalize & Validate"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://app:8000/companies",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"name\": \"{{ $('Normalize & Validate').item.json.company.name }}\",\n  \"industry\": \"{{ $('Normalize & Validate').item.json.company.industry }}\",\n  \"website\": \"{{ $('Normalize & Validate').item.json.company.website }}\",\n  \"phone\": \"{{ $('Normalize & Validate').item.json.company.phone }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        816,
+        112
+      ],
+      "id": "d8ee966a-5e35-4210-bf6b-b75d7ec2f60f",
+      "name": "Create Company"
+    },
+    {
+      "parameters": {
+        "url": "http://app:8000/companies",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "name",
+              "value": "={{ $json.company.name }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        416,
+        0
+      ],
+      "id": "a31ed4a1-fc31-46ba-914e-060523312409",
+      "name": "Find Company",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "e6a83366-734f-4821-a357-a3148738a681",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "number",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        624,
+        0
+      ],
+      "id": "ed1f84dd-ba60-4be5-bbdf-3e8357377fb8",
+      "name": "Company Exists?"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4e4d571b-3e09-4465-be5c-713625c5311c",
+              "name": "company_id",
+              "value": "={{ $json.id }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1024,
+        0
+      ],
+      "id": "a5bc2512-996a-4daa-8df4-753951358610",
+      "name": "Resolve Company"
+    },
+    {
+      "parameters": {
+        "url": "http://app:8000/contacts",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "email",
+              "value": "={{ $('Normalize & Validate').item.json.contact.email }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1232,
+        0
+      ],
+      "id": "cf810c30-751b-4969-a057-c4524377d531",
+      "name": "Find Contact",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "d105fd04-3cf9-43a5-a0f3-7b5c9a4e0873",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "number",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1440,
+        0
+      ],
+      "id": "a5caacf4-794b-49e8-8c6b-493c9e5ae0bb",
+      "name": "Contact Exists?"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "828da1de-d9c0-4b8c-8736-0ffe5d08e018",
+              "name": "company_id",
+              "value": "={{ $json.company_id }}",
+              "type": "number"
+            },
+            {
+              "id": "6537061e-d7f2-4cc9-b425-7b17bb1cae0f",
+              "name": "contact_id",
+              "value": "={{ $json.id }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1904,
+        -48
+      ],
+      "id": "c3f79eca-ce6d-48c3-835c-01803da0063b",
+      "name": "Resolve Contact"
+    },
+    {
+      "parameters": {
+        "url": "http://app:8000/leads",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "external_id",
+              "value": "={{ $('Normalize & Validate').item.json.lead.external_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2112,
+        -48
+      ],
+      "id": "4d558fd7-fb72-4d0b-8892-4a2aedfd5262",
+      "name": "Find Lead",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "ae299b47-af34-48a9-a523-bbb52467da4e",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "number",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2320,
+        -48
+      ],
+      "id": "5baf19cc-4b0d-406d-9099-cbff0985e950",
+      "name": "Lead Exists?"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "326244db-8dcc-418a-ad30-7f1223586918",
+              "name": "success",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "6c065ee0-2725-402e-9699-16ede0c9fe9d",
+              "name": "created",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "81979294-e039-4d53-b827-c1234594106b",
+              "name": "message",
+              "value": "Lead already processed",
+              "type": "string"
+            },
+            {
+              "id": "0a7eb22d-4b5d-4001-bda9-e33ad39334cd",
+              "name": "lead_id",
+              "value": "={{ $json.id }}",
+              "type": "number"
+            },
+            {
+              "id": "ebdc0f92-b7a2-436d-b6f6-ec8d6adaff33",
+              "name": "external_id",
+              "value": "={{ $json.external_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3040,
+        -240
+      ],
+      "id": "22f74b26-4d23-424d-953f-3d8fa46db1dd",
+      "name": "Existing Lead Response"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "326244db-8dcc-418a-ad30-7f1223586918",
+              "name": "success",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "6c065ee0-2725-402e-9699-16ede0c9fe9d",
+              "name": "created",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "81979294-e039-4d53-b827-c1234594106b",
+              "name": "message",
+              "value": "Lead created successfully",
+              "type": "string"
+            },
+            {
+              "id": "0a7eb22d-4b5d-4001-bda9-e33ad39334cd",
+              "name": "lead_id",
+              "value": "={{ $json.id }}",
+              "type": "number"
+            },
+            {
+              "id": "ebdc0f92-b7a2-436d-b6f6-ec8d6adaff33",
+              "name": "external_id",
+              "value": "={{ $json.external_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3488,
+        32
+      ],
+      "id": "4c2a1090-c59a-4425-aefe-bf954253ab16",
+      "name": "Created Lead Response"
+    },
+    {
+      "parameters": {
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        3824,
+        -288
+      ],
+      "id": "ab79916c-a63a-4908-830e-7c00b5c5ca22",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Qualify the following inbound lead.\n\nCompany name:\n{{ $('Normalize & Validate').item.json.company.name }}\n\nIndustry:\n{{ $('Normalize & Validate').item.json.company.industry }}\n\nLead title:\n{{ $('Normalize & Validate').item.json.lead.title }}\n\nLead description:\n{{ $('Normalize & Validate').item.json.lead.description }}\n\nEstimated commercial value:\n{{ $('Normalize & Validate').item.json.lead.estimated_value }}\n{{ $('Normalize & Validate').item.json.lead.currency }}\n\nLead source:\n{{ $('Normalize & Validate').item.json.lead.source }}\n\nReturn exactly this JSON structure:\n\n{\n  \"score\": 0,\n  \"summary\": \"Résumé professionnel en français\",\n  \"recommended_action\": \"Prochaine action concrète en français\"\n}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "You are a strict B2B lead qualification engine for an AI automation company.  Your task is to evaluate whether an inbound request represents a valuable and actionable opportunity for automation, API integration, AI workflows, or business process improvement.  Scoring rubric: - Business need clarity: 0 to 30 points. - Fit with AI automation services: 0 to 30 points. - Budget or commercial value: 0 to 20 points. - Urgency and actionability: 0 to 20 points.  Rules: - The final score must be an integer from 0 to 100. - Do not invent information. - Missing information must reduce the score. - Write the summary and recommended action in French. - Keep each text concise and professional. - Return only valid JSON. - Do not use Markdown. - Do not use code fences. - Do not add fields outside the required JSON structure."
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        2512,
+        32
+      ],
+      "id": "4ca01b59-a775-480c-8f0d-596ca1892323",
+      "name": "AI Qualification"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-5.6-luna",
+          "mode": "list",
+          "cachedResultName": "gpt-5.6-luna"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        2448,
+        240
+      ],
+      "id": "27f01cbd-ccb4-4693-b855-72fc76fc7987",
+      "name": "OpenAI Chat Model"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rawOutput =\n  $json.text ??\n  $json.output ??\n  $json.response ??\n  $json;\n\nlet parsed;\n\nif (\n  typeof rawOutput === \"object\" &&\n  rawOutput !== null &&\n  !Array.isArray(rawOutput)\n) {\n  parsed = rawOutput;\n} else {\n  const cleanedOutput = String(rawOutput)\n    .trim()\n    .replace(/^```(?:json)?\\s*/i, \"\")\n    .replace(/\\s*```$/i, \"\");\n\n  try {\n    parsed = JSON.parse(cleanedOutput);\n  } catch {\n    throw new Error(\n      `AI returned invalid JSON: ${cleanedOutput}`\n    );\n  }\n}\n\nconst score = Number(parsed.score);\n\nif (\n  !Number.isInteger(score) ||\n  score < 0 ||\n  score > 100\n) {\n  throw new Error(\n    \"AI score must be an integer between 0 and 100\"\n  );\n}\n\nconst summary = String(parsed.summary ?? \"\").trim();\nconst recommendedAction = String(\n  parsed.recommended_action ?? \"\"\n).trim();\n\nif (!summary) {\n  throw new Error(\"AI summary is missing\");\n}\n\nif (!recommendedAction) {\n  throw new Error(\"AI recommended_action is missing\");\n}\n\n// Ces valeurs sont calculées par le code,\n// pas choisies librement par l'IA.\nconst priority =\n  score >= 70\n    ? \"high\"\n    : score >= 40\n      ? \"medium\"\n      : \"low\";\n\nconst status = score >= 70 ? \"qualified\" : \"new\";\n\nreturn [\n  {\n    json: {\n      score,\n      priority,\n      status,\n      summary: summary.slice(0, 500),\n      recommended_action: recommendedAction.slice(0, 500),\n    },\n  },\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2864,
+        32
+      ],
+      "id": "651e0c14-600b-4b79-903c-739f82feab15",
+      "name": "Parse AI Qualification"
+    },
+    {
+      "parameters": {
+        "jsCode": "const ai = $input.first().json;\n\nconst normalizedLead =\n  $(\"Normalize & Validate\").first().json.lead;\n\nconst resolvedContact =\n  $(\"Resolve Contact\").first().json;\n\nconst enrichedDescription = [\n  normalizedLead.description,\n  \"\",\n  \"AI Qualification\",\n  `Score: ${ai.score}/100`,\n  `Priority: ${ai.priority}`,\n  `Summary: ${ai.summary}`,\n  `Recommended action: ${ai.recommended_action}`,\n]\n  .join(\"\\n\")\n  .slice(0, 5000);\n\nreturn [\n  {\n    json: {\n      company_id: resolvedContact.company_id,\n      contact_id: resolvedContact.contact_id,\n      external_id: normalizedLead.external_id,\n      title: normalizedLead.title,\n      description: enrichedDescription,\n      status: ai.status,\n      source: normalizedLead.source,\n      estimated_value: normalizedLead.estimated_value,\n      currency: normalizedLead.currency,\n    },\n  },\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3072,
+        32
+      ],
+      "id": "11c171c8-4c4f-43d8-8131-a7db58a08164",
+      "name": "Build Lead Payload"
+    }
+  ],
+  "connections": {
+    "Create Contact": {
+      "main": [
+        [
+          {
+            "node": "Resolve Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize & Validate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize & Validate": {
+      "main": [
+        [
+          {
+            "node": "Find Company",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Company": {
+      "main": [
+        [
+          {
+            "node": "Resolve Company",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Company": {
+      "main": [
+        [
+          {
+            "node": "Company Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Company Exists?": {
+      "main": [
+        [
+          {
+            "node": "Resolve Company",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Company",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Company": {
+      "main": [
+        [
+          {
+            "node": "Find Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Contact": {
+      "main": [
+        [
+          {
+            "node": "Contact Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contact Exists?": {
+      "main": [
+        [
+          {
+            "node": "Resolve Contact",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Contact": {
+      "main": [
+        [
+          {
+            "node": "Find Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Lead": {
+      "main": [
+        [
+          {
+            "node": "Lead Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lead Exists?": {
+      "main": [
+        [
+          {
+            "node": "Existing Lead Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Qualification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Lead": {
+      "main": [
+        [
+          {
+            "node": "Created Lead Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Created Lead Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Existing Lead Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Qualification",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Qualification": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Qualification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Qualification": {
+      "main": [
+        [
+          {
+            "node": "Build Lead Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Lead Payload": {
+      "main": [
+        [
+          {
+            "node": "Create Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner"
+  }
+}

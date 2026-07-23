@@ -1,0 +1,48 @@
+{
+  "name": "LF-99 Error Handler",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "1d27eff1-b9e7-4354-83b8-344f356481ed",
+      "name": "Error Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\n\nconst execution = data.execution ?? {};\nconst workflow = data.workflow ?? {};\nconst error = execution.error ?? data.error ?? {};\n\nreturn [\n  {\n    json: {\n      alert_type: \"workflow_error\",\n      workflow_id: workflow.id ?? null,\n      workflow_name: workflow.name ?? \"Unknown workflow\",\n      execution_id: execution.id ?? null,\n      execution_url: execution.url ?? null,\n      execution_mode: execution.mode ?? null,\n      failed_node: execution.lastNodeExecuted ?? null,\n      error_message:\n        error.message ??\n        data.message ??\n        \"Unknown workflow error\",\n      error_stack: error.stack ?? null,\n      occurred_at: new Date().toISOString(),\n      status: \"unresolved\",\n    },\n  },\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "0f1a4f71-6558-4e75-b02a-756dee139cf5",
+      "name": "Format Error"
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Format Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  }
+}
