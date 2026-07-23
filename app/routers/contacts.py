@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from app.schemas.contact import ContactCreate, ContactRead, ContactUpdate
+
 from app.database import get_db
 from app.models.company import Company
 from app.models.contact import Contact
-from app.schemas.contact import ContactCreate, ContactRead
+from app.schemas.contact import ContactCreate, ContactRead, ContactUpdate
 
 
 router = APIRouter(
@@ -64,6 +64,7 @@ def create_contact(
 @router.get("", response_model=list[ContactRead])
 def list_contacts(
     company_id: int | None = Query(default=None, gt=0),
+    email: str | None = Query(default=None, min_length=3),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -72,6 +73,12 @@ def list_contacts(
 
     if company_id is not None:
         statement = statement.where(Contact.company_id == company_id)
+
+    if email is not None:
+        normalized_email = email.strip().lower()
+        statement = statement.where(
+            func.lower(Contact.email) == normalized_email
+        )
 
     statement = statement.offset(offset).limit(limit)
 

@@ -42,6 +42,44 @@ services:
       db:
         condition: service_healthy
 
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  n8n:
+    image: n8nio/n8n:2.29.7
+    container_name: leadflow_n8n
+    restart: unless-stopped
+
+    environment:
+      N8N_HOST: localhost
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
+      N8N_RUNNERS_ENABLED: "true"
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_SECURE_COOKIE: "false"
+      WEBHOOK_URL: http://localhost:5678/
+      GENERIC_TIMEZONE: Africa/Casablanca
+      TZ: Africa/Casablanca
+
+    ports:
+      - "5678:5678"
+
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+    depends_on:
+      app:
+        condition: service_healthy
+
   db_test:
     image: postgres:17-alpine
     container_name: leadflow_postgres_test
@@ -61,3 +99,4 @@ services:
 
 volumes:
   postgres_data:
+  n8n_data:

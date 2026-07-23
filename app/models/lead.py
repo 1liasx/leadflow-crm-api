@@ -49,6 +49,13 @@ class Lead(Base):
         nullable=True,
     )
 
+    external_id: Mapped[str | None] = mapped_column(
+        String(100),
+        unique=True,
+        index=True,
+        nullable=True,
+    )
+
     title: Mapped[str] = mapped_column(
         String(150),
         nullable=False,

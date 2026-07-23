@@ -20,6 +20,11 @@ class LeadStatus(str, Enum):
 class LeadBase(BaseModel):
     company_id: int = Field(gt=0)
     contact_id: int | None = Field(default=None, gt=0)
+    external_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=100,
+    )
     title: str = Field(min_length=2, max_length=150)
     description: str | None = Field(default=None, max_length=5000)
     status: LeadStatus = LeadStatus.NEW
@@ -54,6 +59,11 @@ class LeadCreate(LeadBase):
 class LeadUpdate(BaseModel):
     company_id: int | None = Field(default=None, gt=0)
     contact_id: int | None = Field(default=None, gt=0)
+    external_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=100,
+    )
     title: str | None = Field(default=None, min_length=2, max_length=150)
     description: str | None = Field(default=None, max_length=5000)
     status: LeadStatus | None = None

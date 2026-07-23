@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException,Query, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -49,16 +49,20 @@ def create_company(
     return company
 @router.get("", response_model=list[CompanyRead])
 def list_companies(
+    name: str | None = Query(default=None, min_length=1),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
-    statement = (
-        select(Company)
-        .order_by(Company.id)
-        .offset(offset)
-        .limit(limit)
-    )
+    statement = select(Company).order_by(Company.id)
+
+    if name is not None:
+        normalized_name = name.strip().lower()
+        statement = statement.where(
+            func.lower(Company.name) == normalized_name
+        )
+
+    statement = statement.offset(offset).limit(limit)
 
     return db.scalars(statement).all()
 @router.get("/{company_id}", response_model=CompanyRead)

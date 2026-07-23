@@ -1,15 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
-from app.schemas.lead import LeadCreate, LeadRead, LeadStatus
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from app.schemas.lead import LeadCreate, LeadRead, LeadStatus, LeadUpdate
 
 from app.database import get_db
 from app.models.company import Company
 from app.models.contact import Contact
 from app.models.lead import Lead
-from app.schemas.lead import LeadCreate, LeadRead
+from app.schemas.lead import LeadCreate, LeadRead, LeadStatus, LeadUpdate
 
 
 router = APIRouter(
@@ -27,6 +25,19 @@ def create_lead(
     lead_data: LeadCreate,
     db: Session = Depends(get_db),
 ):
+    if lead_data.external_id is not None:
+        existing_lead = db.scalar(
+            select(Lead).where(
+                Lead.external_id == lead_data.external_id
+            )
+        )
+
+        if existing_lead:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A lead with this external_id already exists.",
+            )
+
     company = db.get(Company, lead_data.company_id)
 
     if company is None:
@@ -72,6 +83,7 @@ def create_lead(
 def list_leads(
     company_id: int | None = Query(default=None, gt=0),
     contact_id: int | None = Query(default=None, gt=0),
+    external_id: str | None = Query(default=None, min_length=1),
     lead_status: LeadStatus | None = Query(default=None, alias="status"),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
@@ -84,6 +96,9 @@ def list_leads(
 
     if contact_id is not None:
         statement = statement.where(Lead.contact_id == contact_id)
+
+    if external_id is not None:
+        statement = statement.where(Lead.external_id == external_id.strip())
 
     if lead_status is not None:
         statement = statement.where(Lead.status == lead_status.value)
@@ -167,6 +182,20 @@ def update_lead(
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="The contact does not belong to this company.",
+            )
+
+    if "external_id" in update_data and update_data["external_id"] is not None:
+        existing_lead = db.scalar(
+            select(Lead).where(
+                Lead.external_id == update_data["external_id"],
+                Lead.id != lead_id,
+            )
+        )
+
+        if existing_lead:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A lead with this external_id already exists.",
             )
 
     if "status" in update_data:
